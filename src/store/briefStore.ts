@@ -1,9 +1,11 @@
 import { create } from 'zustand';
-import type { BriefCard, PeakCategory, CardStatus } from '@/types';
+import type { BriefCard, PeakCategory, CardStatus, ActivityLog, ArchivedBrief, ExportViewMode } from '@/types';
 
 interface BriefState {
   cardsByGroup: Record<string, BriefCard[]>;
   activeGroupId: string | null;
+  archivedBriefs: ArchivedBrief[];
+  exportViewMode: ExportViewMode;
   setActiveGroup: (groupId: string) => void;
   getCards: () => BriefCard[];
   addCard: (peakEventId: string, category: PeakCategory) => void;
@@ -13,15 +15,26 @@ interface BriefState {
   updateStatus: (cardId: string, status: CardStatus) => void;
   updateDueDate: (cardId: string, dueDate: string) => void;
   updateActionItem: (cardId: string, actionItem: string) => void;
+  updateHostNotes: (cardId: string, hostNotes: string) => void;
+  addActivity: (cardId: string, author: string, content: string, type: ActivityLog['type']) => void;
+  removeActivity: (cardId: string, activityId: string) => void;
   reorderCards: (category: PeakCategory, fromIndex: number, toIndex: number) => void;
   getCardsByCategory: (category: PeakCategory) => BriefCard[];
   hasPeak: (peakEventId: string) => boolean;
   clearAll: () => void;
+  archiveCurrentBrief: (groupId: string, groupName: string, date: string, title?: string) => ArchivedBrief;
+  getArchivedBriefs: (groupId?: string) => ArchivedBrief[];
+  getArchivedBriefById: (id: string) => ArchivedBrief | undefined;
+  deleteArchivedBrief: (id: string) => void;
+  setExportViewMode: (mode: ExportViewMode) => void;
+  updateLastUpdated: (cardId: string, author: string) => void;
 }
 
 const STORAGE_KEY = 'brief-cards-by-group';
+const ARCHIVE_KEY = 'brief-archive';
+const VIEW_MODE_KEY = 'brief-export-view-mode';
 
-const loadFromStorage = (): Record<string, BriefCard[]> => {
+const loadCardsFromStorage = (): Record<string, BriefCard[]> => {
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
     return stored ? JSON.parse(stored) : {};
@@ -30,7 +43,7 @@ const loadFromStorage = (): Record<string, BriefCard[]> => {
   }
 };
 
-const saveToStorage = (cardsByGroup: Record<string, BriefCard[]>) => {
+const saveCardsToStorage = (cardsByGroup: Record<string, BriefCard[]>) => {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(cardsByGroup));
   } catch {
@@ -38,9 +51,45 @@ const saveToStorage = (cardsByGroup: Record<string, BriefCard[]>) => {
   }
 };
 
+const loadArchiveFromStorage = (): ArchivedBrief[] => {
+  try {
+    const stored = localStorage.getItem(ARCHIVE_KEY);
+    return stored ? JSON.parse(stored) : [];
+  } catch {
+    return [];
+  }
+};
+
+const saveArchiveToStorage = (archive: ArchivedBrief[]) => {
+  try {
+    localStorage.setItem(ARCHIVE_KEY, JSON.stringify(archive));
+  } catch {
+    // ignore
+  }
+};
+
+const loadViewModeFromStorage = (): ExportViewMode => {
+  try {
+    const stored = localStorage.getItem(VIEW_MODE_KEY);
+    return (stored as ExportViewMode) || 'screen';
+  } catch {
+    return 'screen';
+  }
+};
+
+const saveViewModeToStorage = (mode: ExportViewMode) => {
+  try {
+    localStorage.setItem(VIEW_MODE_KEY, mode);
+  } catch {
+    // ignore
+  }
+};
+
 export const useBriefStore = create<BriefState>((set, get) => ({
-  cardsByGroup: loadFromStorage(),
+  cardsByGroup: loadCardsFromStorage(),
   activeGroupId: null,
+  archivedBriefs: loadArchiveFromStorage(),
+  exportViewMode: loadViewModeFromStorage(),
 
   setActiveGroup: (groupId: string) => {
     const { cardsByGroup } = get();
@@ -74,12 +123,14 @@ export const useBriefStore = create<BriefState>((set, get) => ({
       assignee: '',
       dueDate: '',
       actionItem: '',
+      activities: [],
+      hostNotes: '',
     };
 
     const newCards = [...cards, newCard];
     const newCardsByGroup = { ...cardsByGroup, [activeGroupId]: newCards };
     set({ cardsByGroup: newCardsByGroup });
-    saveToStorage(newCardsByGroup);
+    saveCardsToStorage(newCardsByGroup);
   },
 
   removeCard: (cardId: string) => {
@@ -101,11 +152,11 @@ export const useBriefStore = create<BriefState>((set, get) => ({
 
     const newCardsByGroup = { ...cardsByGroup, [activeGroupId]: newCards };
     set({ cardsByGroup: newCardsByGroup });
-    saveToStorage(newCardsByGroup);
+    saveCardsToStorage(newCardsByGroup);
   },
 
   updateJudgement: (cardId: string, judgement: string) => {
-    const { activeGroupId, cardsByGroup } = get();
+    const { activeGroupId, cardsByGroup, updateLastUpdated } = get();
     if (!activeGroupId) return;
 
     const cards = cardsByGroup[activeGroupId] || [];
@@ -115,11 +166,12 @@ export const useBriefStore = create<BriefState>((set, get) => ({
 
     const newCardsByGroup = { ...cardsByGroup, [activeGroupId]: newCards };
     set({ cardsByGroup: newCardsByGroup });
-    saveToStorage(newCardsByGroup);
+    saveCardsToStorage(newCardsByGroup);
+    updateLastUpdated(cardId, '编辑者');
   },
 
   updateAssignee: (cardId: string, assignee: string) => {
-    const { activeGroupId, cardsByGroup } = get();
+    const { activeGroupId, cardsByGroup, updateLastUpdated } = get();
     if (!activeGroupId) return;
 
     const cards = cardsByGroup[activeGroupId] || [];
@@ -129,11 +181,12 @@ export const useBriefStore = create<BriefState>((set, get) => ({
 
     const newCardsByGroup = { ...cardsByGroup, [activeGroupId]: newCards };
     set({ cardsByGroup: newCardsByGroup });
-    saveToStorage(newCardsByGroup);
+    saveCardsToStorage(newCardsByGroup);
+    updateLastUpdated(cardId, assignee || '编辑者');
   },
 
   updateStatus: (cardId: string, status: CardStatus) => {
-    const { activeGroupId, cardsByGroup } = get();
+    const { activeGroupId, cardsByGroup, updateLastUpdated } = get();
     if (!activeGroupId) return;
 
     const cards = cardsByGroup[activeGroupId] || [];
@@ -143,11 +196,11 @@ export const useBriefStore = create<BriefState>((set, get) => ({
 
     const newCardsByGroup = { ...cardsByGroup, [activeGroupId]: newCards };
     set({ cardsByGroup: newCardsByGroup });
-    saveToStorage(newCardsByGroup);
+    saveCardsToStorage(newCardsByGroup);
   },
 
   updateDueDate: (cardId: string, dueDate: string) => {
-    const { activeGroupId, cardsByGroup } = get();
+    const { activeGroupId, cardsByGroup, updateLastUpdated } = get();
     if (!activeGroupId) return;
 
     const cards = cardsByGroup[activeGroupId] || [];
@@ -157,11 +210,11 @@ export const useBriefStore = create<BriefState>((set, get) => ({
 
     const newCardsByGroup = { ...cardsByGroup, [activeGroupId]: newCards };
     set({ cardsByGroup: newCardsByGroup });
-    saveToStorage(newCardsByGroup);
+    saveCardsToStorage(newCardsByGroup);
   },
 
   updateActionItem: (cardId: string, actionItem: string) => {
-    const { activeGroupId, cardsByGroup } = get();
+    const { activeGroupId, cardsByGroup, updateLastUpdated } = get();
     if (!activeGroupId) return;
 
     const cards = cardsByGroup[activeGroupId] || [];
@@ -171,7 +224,84 @@ export const useBriefStore = create<BriefState>((set, get) => ({
 
     const newCardsByGroup = { ...cardsByGroup, [activeGroupId]: newCards };
     set({ cardsByGroup: newCardsByGroup });
-    saveToStorage(newCardsByGroup);
+    saveCardsToStorage(newCardsByGroup);
+  },
+
+  updateHostNotes: (cardId: string, hostNotes: string) => {
+    const { activeGroupId, cardsByGroup } = get();
+    if (!activeGroupId) return;
+
+    const cards = cardsByGroup[activeGroupId] || [];
+    const newCards = cards.map(c =>
+      c.id === cardId ? { ...c, hostNotes } : c
+    );
+
+    const newCardsByGroup = { ...cardsByGroup, [activeGroupId]: newCards };
+    set({ cardsByGroup: newCardsByGroup });
+    saveCardsToStorage(newCardsByGroup);
+  },
+
+  addActivity: (cardId: string, author: string, content: string, type: ActivityLog['type']) => {
+    const { activeGroupId, cardsByGroup } = get();
+    if (!activeGroupId) return;
+
+    const cards = cardsByGroup[activeGroupId] || [];
+    const newActivity: ActivityLog = {
+      id: `act-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
+      timestamp: new Date().toISOString(),
+      author,
+      content,
+      type,
+    };
+
+    const newCards = cards.map(c => {
+      if (c.id !== cardId) return c;
+      const activities = [...(c.activities || []), newActivity];
+      return {
+        ...c,
+        activities,
+        lastUpdatedBy: author,
+        lastUpdatedAt: newActivity.timestamp,
+      };
+    });
+
+    const newCardsByGroup = { ...cardsByGroup, [activeGroupId]: newCards };
+    set({ cardsByGroup: newCardsByGroup });
+    saveCardsToStorage(newCardsByGroup);
+  },
+
+  removeActivity: (cardId: string, activityId: string) => {
+    const { activeGroupId, cardsByGroup } = get();
+    if (!activeGroupId) return;
+
+    const cards = cardsByGroup[activeGroupId] || [];
+    const newCards = cards.map(c => {
+      if (c.id !== cardId) return c;
+      return {
+        ...c,
+        activities: (c.activities || []).filter(a => a.id !== activityId),
+      };
+    });
+
+    const newCardsByGroup = { ...cardsByGroup, [activeGroupId]: newCards };
+    set({ cardsByGroup: newCardsByGroup });
+    saveCardsToStorage(newCardsByGroup);
+  },
+
+  updateLastUpdated: (cardId: string, author: string) => {
+    const { activeGroupId, cardsByGroup } = get();
+    if (!activeGroupId) return;
+
+    const cards = cardsByGroup[activeGroupId] || [];
+    const newCards = cards.map(c =>
+      c.id === cardId
+        ? { ...c, lastUpdatedBy: author, lastUpdatedAt: new Date().toISOString() }
+        : c
+    );
+
+    const newCardsByGroup = { ...cardsByGroup, [activeGroupId]: newCards };
+    set({ cardsByGroup: newCardsByGroup });
+    saveCardsToStorage(newCardsByGroup);
   },
 
   reorderCards: (category: PeakCategory, fromIndex: number, toIndex: number) => {
@@ -194,7 +324,7 @@ export const useBriefStore = create<BriefState>((set, get) => ({
     const newCards = [...otherCards, ...categoryCards];
     const newCardsByGroup = { ...cardsByGroup, [activeGroupId]: newCards };
     set({ cardsByGroup: newCardsByGroup });
-    saveToStorage(newCardsByGroup);
+    saveCardsToStorage(newCardsByGroup);
   },
 
   getCardsByCategory: (category: PeakCategory): BriefCard[] => {
@@ -219,6 +349,48 @@ export const useBriefStore = create<BriefState>((set, get) => ({
 
     const newCardsByGroup = { ...cardsByGroup, [activeGroupId]: [] };
     set({ cardsByGroup: newCardsByGroup });
-    saveToStorage(newCardsByGroup);
+    saveCardsToStorage(newCardsByGroup);
+  },
+
+  archiveCurrentBrief: (groupId: string, groupName: string, date: string, title?: string): ArchivedBrief => {
+    const { cardsByGroup, archivedBriefs } = get();
+    const cards = cardsByGroup[groupId] || [];
+
+    const archived: ArchivedBrief = {
+      id: `archive-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      groupId,
+      groupName,
+      date,
+      createdAt: new Date().toISOString(),
+      cards: JSON.parse(JSON.stringify(cards)),
+      title: title || `${groupName} ${date} 晨会简报`,
+    };
+
+    const newArchive = [archived, ...archivedBriefs];
+    set({ archivedBriefs: newArchive });
+    saveArchiveToStorage(newArchive);
+    return archived;
+  },
+
+  getArchivedBriefs: (groupId?: string): ArchivedBrief[] => {
+    const { archivedBriefs } = get();
+    if (!groupId) return archivedBriefs;
+    return archivedBriefs.filter(a => a.groupId === groupId);
+  },
+
+  getArchivedBriefById: (id: string): ArchivedBrief | undefined => {
+    return get().archivedBriefs.find(a => a.id === id);
+  },
+
+  deleteArchivedBrief: (id: string) => {
+    const { archivedBriefs } = get();
+    const newArchive = archivedBriefs.filter(a => a.id !== id);
+    set({ archivedBriefs: newArchive });
+    saveArchiveToStorage(newArchive);
+  },
+
+  setExportViewMode: (mode: ExportViewMode) => {
+    set({ exportViewMode: mode });
+    saveViewModeToStorage(mode);
   },
 }));

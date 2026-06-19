@@ -14,11 +14,18 @@ import {
   Flag,
   Lightbulb,
   Clock,
+  Monitor,
+  FileText,
+  Mic2,
+  Clock3,
+  UserCheck,
+  MessageCircle,
+  FileCheck,
 } from 'lucide-react';
 import { useBrandStore } from '@/store/brandStore';
 import { useDataStore } from '@/store/dataStore';
 import { useBriefStore } from '@/store/briefStore';
-import type { PeakCategory, PeakEvent, BriefCard, CardStatus } from '@/types';
+import type { PeakCategory, BriefCard, CardStatus, ExportViewMode, ActivityLog } from '@/types';
 import { formatDateCN, formatNumber, getYesterdayDate } from '@/utils/helpers';
 
 const statusLabels: Record<CardStatus, string> = {
@@ -35,11 +42,28 @@ const statusColors: Record<CardStatus, string> = {
   resolved: 'bg-emerald-50 text-emerald-600 border-emerald-200',
 };
 
+const activityTypeIcons: Record<ActivityLog['type'], typeof Clock> = {
+  progress: Clock3,
+  result: FileCheck,
+  note: MessageCircle,
+};
+
+const activityTypeLabels: Record<ActivityLog['type'], string> = {
+  progress: '进展',
+  result: '结果',
+  note: '备注',
+};
+
+const formatTime = (iso: string) => {
+  const d = new Date(iso);
+  return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+};
+
 export default function ExportPreview() {
   const navigate = useNavigate();
   const { selectedGroupId, getCurrentGroup, getSelfBrand, getAllBrands } = useBrandStore();
   const { getSentimentByBrand, getPeakById } = useDataStore();
-  const { setActiveGroup, getCardsByCategory } = useBriefStore();
+  const { setActiveGroup, getCardsByCategory, exportViewMode, setExportViewMode } = useBriefStore();
 
   const [isFullscreen, setIsFullscreen] = useState(false);
 
@@ -47,6 +71,9 @@ export default function ExportPreview() {
   const selfBrand = getSelfBrand();
   const brands = getAllBrands();
   const yesterday = getYesterdayDate();
+
+  const viewMode: ExportViewMode = exportViewMode || 'screen';
+  const isPrintMode = viewMode === 'print';
 
   useEffect(() => {
     if (!selectedGroupId) {
@@ -120,6 +147,27 @@ export default function ExportPreview() {
         </div>
 
         <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1 bg-gray-100 p-1 rounded-lg">
+            <button
+              onClick={() => setExportViewMode('screen')}
+              className={`px-3 py-1.5 text-xs rounded-md flex items-center gap-1.5 transition-colors ${
+                !isPrintMode ? 'bg-white text-navy-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              <Monitor className="w-3.5 h-3.5" />
+              投屏视图
+            </button>
+            <button
+              onClick={() => setExportViewMode('print')}
+              className={`px-3 py-1.5 text-xs rounded-md flex items-center gap-1.5 transition-colors ${
+                isPrintMode ? 'bg-white text-navy-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              <FileText className="w-3.5 h-3.5" />
+              打印视图
+            </button>
+          </div>
+
           <button
             onClick={toggleFullscreen}
             className="btn-secondary flex items-center gap-2 text-sm"
@@ -174,7 +222,7 @@ export default function ExportPreview() {
               </div>
             </div>
 
-            <div className="mb-6">
+            <div className={`mb-6 ${!isPrintMode ? '' : 'print-only-block'}`}>
               <h3 className="font-serif text-base font-semibold text-navy-800 mb-3 flex items-center gap-2">
                 <span className="w-1 h-5 bg-champagne-500 rounded-full" />
                 一、声量总览
@@ -262,6 +310,9 @@ export default function ExportPreview() {
                           const { event, brand } = getCardData(card);
                           if (!event) return null;
 
+                          const activities = card.activities || [];
+                          const lastActivity = activities[activities.length - 1];
+
                           return (
                             <div
                               key={card.id}
@@ -288,10 +339,18 @@ export default function ExportPreview() {
                                     {statusLabels[card.status]}
                                   </span>
                                 )}
-                                <span className="text-[10px] text-gray-400 ml-auto flex items-center gap-1">
-                                  <span className="w-1.5 h-1.5 rounded-full bg-navy-300" />
-                                  {formatNumber(event.mentionCount)}
-                                </span>
+                                {isPrintMode && lastActivity && (
+                                  <span className="text-[10px] text-gray-500 ml-auto flex items-center gap-1">
+                                    <UserCheck className="w-3 h-3" />
+                                    {lastActivity.author} · {formatTime(lastActivity.timestamp)}
+                                  </span>
+                                )}
+                                {!isPrintMode && (
+                                  <span className="text-[10px] text-gray-400 ml-auto flex items-center gap-1">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-navy-300" />
+                                    {formatNumber(event.mentionCount)}
+                                  </span>
+                                )}
                               </div>
 
                               <h4 className="text-sm font-semibold text-navy-800 mb-2 leading-snug">
@@ -322,7 +381,7 @@ export default function ExportPreview() {
                                 </div>
                               )}
 
-                              <div className="flex items-center gap-3 pt-2 border-t border-gray-100 text-[10px] text-gray-500">
+                              <div className="flex items-center gap-3 pt-2 border-t border-gray-100 text-[10px] text-gray-500 flex-wrap">
                                 {card.assignee && (
                                   <span className="flex items-center gap-1">
                                     <User className="w-3 h-3" />
@@ -335,10 +394,54 @@ export default function ExportPreview() {
                                     {card.dueDate}
                                   </span>
                                 )}
-                                {!card.assignee && !card.dueDate && (
+                                {!isPrintMode && !card.assignee && !card.dueDate && (
                                   <span className="text-gray-300">待指定负责人</span>
                                 )}
                               </div>
+
+                              {isPrintMode && (
+                                <>
+                                  {card.hostNotes && (
+                                    <div className="mt-2 p-2 bg-champagne-50/80 rounded text-[11px] text-champagne-900 leading-relaxed border border-champagne-200">
+                                      <span className="font-medium flex items-center gap-1 mb-1">
+                                        <Mic2 className="w-3 h-3" />
+                                        主持人跟进备注：
+                                      </span>
+                                      {card.hostNotes}
+                                    </div>
+                                  )}
+
+                                  {activities.length > 0 && (
+                                    <div className="mt-2 pt-2 border-t border-gray-100">
+                                      <p className="text-[10px] font-medium text-gray-600 mb-1.5 flex items-center gap-1">
+                                        <Clock3 className="w-3 h-3" />
+                                        处理记录
+                                      </p>
+                                      <div className="space-y-1.5">
+                                        {activities.slice().reverse().map((activity) => {
+                                          const ActIcon = activityTypeIcons[activity.type];
+                                          return (
+                                            <div key={activity.id} className="flex items-start gap-1.5 text-[10px]">
+                                              <ActIcon className="w-3 h-3 text-gray-400 mt-0.5 flex-shrink-0" />
+                                              <div className="flex-1 min-w-0">
+                                                <span className="font-medium text-gray-700">
+                                                  {activity.author}
+                                                </span>
+                                                <span className="text-gray-400 mx-1">
+                                                  {activityTypeLabels[activity.type]} · {formatTime(activity.timestamp)}
+                                                </span>
+                                                <p className="text-gray-600 break-words">
+                                                  {activity.content}
+                                                </p>
+                                              </div>
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+                                    </div>
+                                  )}
+                                </>
+                              )}
                             </div>
                           );
                         })
@@ -381,6 +484,9 @@ export default function ExportPreview() {
           body {
             print-color-adjust: exact;
             -webkit-print-color-adjust: exact;
+          }
+          .print-only-block {
+            display: block !important;
           }
         }
       `}</style>

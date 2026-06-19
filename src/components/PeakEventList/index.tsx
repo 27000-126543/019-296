@@ -1,21 +1,56 @@
-import { useState } from 'react';
-import { AlertTriangle, Filter, Sparkles, TrendingDown, TrendingUp, Zap } from 'lucide-react';
+import { useState, useMemo } from 'react';
+import {
+  AlertTriangle,
+  Filter,
+  Sparkles,
+  TrendingDown,
+  TrendingUp,
+  Zap,
+  User,
+  Flag,
+  Building2,
+  Target,
+} from 'lucide-react';
 import { useDataStore } from '@/store/dataStore';
 import { useBrandStore } from '@/store/brandStore';
+import { useBriefStore } from '@/store/briefStore';
 import PeakEventCard from '@/components/PeakEventCard';
-import type { PeakLevel, PeakCategory, PeakEvent } from '@/types';
+import type { PeakLevel, PeakCategory, PeakEvent, CardStatus, BrandFilterType } from '@/types';
+import { CARD_STATUS_LABELS } from '@/types';
 
 export default function PeakEventList() {
   const { getPeaksByGroup, getRecommendedPeaks } = useDataStore();
   const { selectedGroupId, getAllBrands, getSelfBrand } = useBrandStore();
+  const { getCards } = useBriefStore();
   const [levelFilter, setLevelFilter] = useState<PeakLevel | 'all'>('all');
   const [categoryFilter, setCategoryFilter] = useState<PeakCategory | 'all'>('all');
+  const [brandFilter, setBrandFilter] = useState<BrandFilterType>('all');
+  const [statusFilter, setStatusFilter] = useState<CardStatus | 'all'>('all');
+  const [assigneeFilter, setAssigneeFilter] = useState<string>('all');
   const [showRecommended, setShowRecommended] = useState(true);
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
 
   const brands = getAllBrands();
   const selfBrand = getSelfBrand();
   const peakEvents = selectedGroupId ? getPeaksByGroup(selectedGroupId) : [];
   const recommendedPeaks = selectedGroupId ? getRecommendedPeaks(selectedGroupId) : [];
+  const briefCards = getCards();
+
+  const peakCardMap = useMemo(() => {
+    const map: Record<string, typeof briefCards[number]> = {};
+    briefCards.forEach((c) => {
+      map[c.peakEventId] = c;
+    });
+    return map;
+  }, [briefCards]);
+
+  const assignees = useMemo(() => {
+    const set = new Set<string>();
+    briefCards.forEach((c) => {
+      if (c.assignee) set.add(c.assignee);
+    });
+    return Array.from(set);
+  }, [briefCards]);
 
   const filteredEvents = peakEvents
     .filter((event) => {
@@ -23,9 +58,28 @@ export default function PeakEventList() {
       if (!hasBrand) return false;
       if (levelFilter !== 'all' && event.level !== levelFilter) return false;
       if (categoryFilter !== 'all' && event.category !== categoryFilter) return false;
+
+      if (brandFilter !== 'all') {
+        const brand = brands.find((b) => b.id === event.brandId);
+        if (brandFilter === 'self' && !brand?.isSelf) return false;
+        if (brandFilter === 'competitor' && brand?.isSelf) return false;
+      }
+
+      if (statusFilter !== 'all') {
+        const card = peakCardMap[event.id];
+        if (!card) return false;
+        if (card.status !== statusFilter) return false;
+      }
+
+      if (assigneeFilter !== 'all') {
+        const card = peakCardMap[event.id];
+        if (!card) return false;
+        if (card.assignee !== assigneeFilter) return false;
+      }
+
       return true;
     })
-    .sort((a, b) => b.mentionCount - a.mentionCount);
+    .sort((a, b) => (b.recommendScore?.total || 0) - (a.recommendScore?.total || 0));
 
   const levelOptions: { value: PeakLevel | 'all'; label: string }[] = [
     { value: 'all', label: '全部' },
@@ -42,6 +96,20 @@ export default function PeakEventList() {
     { value: 'opportunity', label: '机会' },
   ];
 
+  const brandFilterOptions: { value: BrandFilterType; label: string; icon: typeof Building2 }[] = [
+    { value: 'all', label: '全部', icon: Building2 },
+    { value: 'self', label: '自家', icon: Target },
+    { value: 'competitor', label: '竞品', icon: Building2 },
+  ];
+
+  const statusFilterOptions: { value: CardStatus | 'all'; label: string }[] = [
+    { value: 'all', label: '全部' },
+    { value: 'pending', label: '待处理' },
+    { value: 'in-progress', label: '处理中' },
+    { value: 'monitoring', label: '观察中' },
+    { value: 'resolved', label: '已解决' },
+  ];
+
   const getRecommendIcon = (event: PeakEvent) => {
     if (event.category === 'risk' || event.level === 'high') {
       return <AlertTriangle className="w-3.5 h-3.5 text-red-500" />;
@@ -54,6 +122,14 @@ export default function PeakEventList() {
     }
     return <TrendingDown className="w-3.5 h-3.5 text-emerald-500" />;
   };
+
+  const hasActiveFilters =
+    statusFilter !== 'all' || assigneeFilter !== 'all' || brandFilter !== 'all';
+
+  const activeFilterCount =
+    (statusFilter !== 'all' ? 1 : 0) +
+    (assigneeFilter !== 'all' ? 1 : 0) +
+    (brandFilter !== 'all' ? 1 : 0);
 
   return (
     <div className="card-base p-5 h-full flex flex-col">
@@ -82,15 +158,28 @@ export default function PeakEventList() {
             </button>
           </div>
           <div className="space-y-2">
-            {recommendedPeaks.slice(0, 3).map((event) => (
+            {recommendedPeaks.slice(0, 5).map((event) => (
               <div
                 key={`rec-${event.id}`}
                 className="flex items-start gap-2 p-2 bg-white/70 rounded text-xs"
               >
                 <div className="mt-0.5">{getRecommendIcon(event)}</div>
                 <div className="flex-1 min-w-0">
-                  <p className="font-medium text-gray-800 truncate">{event.title}</p>
-                  <p className="text-[10px] text-gray-500 mt-0.5">{event.recommendReason}</p>
+                  <div className="flex items-center gap-2">
+                    <p className="font-medium text-gray-800 truncate">{event.title}</p>
+                    {event.recommendScore && (
+                      <span className="text-[10px] text-amber-600 font-medium flex-shrink-0">
+                        {event.recommendScore.total}分
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-[10px] text-gray-500 mt-0.5 flex flex-wrap gap-1">
+                    {(event.recommendScore?.reasons || []).slice(0, 2).map((reason, idx) => (
+                      <span key={idx} className="bg-white px-1 rounded border border-gray-200 text-gray-600">
+                        {reason}
+                      </span>
+                    ))}
+                  </div>
                 </div>
               </div>
             ))}
@@ -108,13 +197,13 @@ export default function PeakEventList() {
         </button>
       )}
 
-      <div className="flex items-center gap-2 mb-4 flex-wrap">
+      <div className="flex items-center gap-2 mb-3 flex-wrap">
         <div className="flex items-center gap-1 text-xs text-gray-500">
           <Filter className="w-3.5 h-3.5" />
           <span>筛选：</span>
         </div>
 
-        <div className="flex gap-1">
+        <div className="flex gap-1 flex-wrap">
           {levelOptions.map((opt) => (
             <button
               key={opt.value}
@@ -145,7 +234,109 @@ export default function PeakEventList() {
             </button>
           ))}
         </div>
+
+        <button
+          onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
+          className={`px-2.5 py-1 text-xs rounded transition-colors flex items-center gap-1 ${
+            showAdvancedFilters || hasActiveFilters
+              ? 'bg-navy-100 text-navy-700 border border-navy-200'
+              : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+          }`}
+        >
+            更多筛选
+            {activeFilterCount > 0 && (
+              <span className="bg-champagne-500 text-white text-[9px] w-4 h-4 rounded-full flex items-center justify-center">
+                {activeFilterCount}
+              </span>
+            )}
+          </button>
       </div>
+
+      {showAdvancedFilters && (
+        <div className="mb-3 p-3 bg-gray-50 rounded-lg border border-gray-200 space-y-2">
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="flex items-center gap-1.5">
+              <Building2 className="w-3 h-3 text-gray-500" />
+              <span className="text-[11px] text-gray-500">品牌：</span>
+            </div>
+            <div className="flex gap-1 flex-wrap">
+              {brandFilterOptions.map((opt) => {
+                const Icon = opt.icon;
+                return (
+                  <button
+                    key={opt.value}
+                    onClick={() => setBrandFilter(opt.value)}
+                    className={`px-2 py-0.5 text-[11px] rounded transition-colors flex items-center gap-1
+                      ${brandFilter === opt.value
+                        ? 'bg-navy-700 text-white'
+                        : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-100'
+                      }`}
+                  >
+                    <Icon className="w-2.5 h-2.5" />
+                    {opt.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="flex items-center gap-1.5">
+              <Flag className="w-3 h-3 text-gray-500" />
+              <span className="text-[11px] text-gray-500">状态：</span>
+            </div>
+            <div className="flex gap-1 flex-wrap">
+              {statusFilterOptions.map((opt) => (
+                <button
+                  key={opt.value}
+                  onClick={() => setStatusFilter(opt.value)}
+                  className={`px-2 py-0.5 text-[11px] rounded transition-colors
+                    ${statusFilter === opt.value
+                      ? 'bg-navy-700 text-white'
+                      : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-100'
+                    }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {assignees.length > 0 && (
+            <div className="flex items-center gap-3 flex-wrap">
+              <div className="flex items-center gap-1.5">
+                <User className="w-3 h-3 text-gray-500" />
+                <span className="text-[11px] text-gray-500">负责人：</span>
+              </div>
+              <div className="flex gap-1 flex-wrap">
+                <button
+                  onClick={() => setAssigneeFilter('all')}
+                  className={`px-2 py-0.5 text-[11px] rounded transition-colors
+                    ${assigneeFilter === 'all'
+                      ? 'bg-navy-700 text-white'
+                      : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-100'
+                    }`}
+                >
+                  全部
+                </button>
+                {assignees.map((name) => (
+                  <button
+                    key={name}
+                    onClick={() => setAssigneeFilter(name)}
+                    className={`px-2 py-0.5 text-[11px] rounded transition-colors
+                      ${assigneeFilter === name
+                        ? 'bg-champagne-500 text-white'
+                        : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-100'
+                      }`}
+                  >
+                    {name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="text-xs text-gray-400 mb-3 flex items-center gap-2">
         <span>拖拽卡片至右侧简报区添加到晨会汇报</span>

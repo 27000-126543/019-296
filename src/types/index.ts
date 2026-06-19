@@ -39,6 +39,16 @@ export interface PlatformData {
 export type PeakLevel = 'high' | 'medium' | 'low';
 export type PeakCategory = 'brand' | 'competitor' | 'risk' | 'opportunity';
 export type CardStatus = 'pending' | 'in-progress' | 'resolved' | 'monitoring';
+export type BrandFilterType = 'all' | 'self' | 'competitor';
+export type ExportViewMode = 'screen' | 'print';
+
+export interface RecommendScore {
+  total: number;
+  negativeScore: number;
+  volumeScore: number;
+  competitorScore: number;
+  reasons: string[];
+}
 
 export interface PeakEvent {
   id: string;
@@ -54,6 +64,15 @@ export interface PeakEvent {
   recommendReason?: string;
   negativeRatio?: number;
   dayOverDayChange?: number;
+  recommendScore?: RecommendScore;
+}
+
+export interface ActivityLog {
+  id: string;
+  timestamp: string;
+  author: string;
+  content: string;
+  type: 'progress' | 'result' | 'note';
 }
 
 export interface BriefCard {
@@ -66,6 +85,20 @@ export interface BriefCard {
   status?: CardStatus;
   dueDate?: string;
   actionItem?: string;
+  activities?: ActivityLog[];
+  lastUpdatedBy?: string;
+  lastUpdatedAt?: string;
+  hostNotes?: string;
+}
+
+export interface ArchivedBrief {
+  id: string;
+  groupId: string;
+  groupName: string;
+  date: string;
+  createdAt: string;
+  cards: BriefCard[];
+  title: string;
 }
 
 export type PlatformKey = 'weibo' | 'wechat' | 'douyin' | 'xiaohongshu' | 'news' | 'forum';
