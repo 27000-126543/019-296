@@ -1,11 +1,11 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { PieChart, ChevronDown } from 'lucide-react';
 import { useBrandStore } from '@/store/brandStore';
 import { useDataStore } from '@/store/dataStore';
 import { formatPercent } from '@/utils/helpers';
 
 export default function SentimentChart() {
-  const { getAllBrands, getSelfBrand } = useBrandStore();
+  const { selectedGroupId, getAllBrands, getSelfBrand } = useBrandStore();
   const { getSentimentByBrand } = useDataStore();
   const brands = getAllBrands();
   const selfBrand = getSelfBrand();
@@ -14,6 +14,12 @@ export default function SentimentChart() {
     selfBrand?.id || null
   );
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+
+  useEffect(() => {
+    if (selfBrand) {
+      setSelectedBrandId(selfBrand.id);
+    }
+  }, [selectedGroupId, selfBrand]);
 
   const selectedBrand = brands.find((b) => b.id === selectedBrandId);
   const sentiment = selectedBrand ? getSentimentByBrand(selectedBrand.id) : null;

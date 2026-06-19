@@ -1,9 +1,9 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { FileEdit, Trash2, Download, Plus } from 'lucide-react';
 import { useBriefStore } from '@/store/briefStore';
 import { useNavigate } from 'react-router-dom';
 import BriefCard from '@/components/BriefCard';
-import type { PeakCategory } from '@/types';
+import type { PeakCategory, BriefCard as BriefCardType } from '@/types';
 import { getCategoryLabel } from '@/utils/helpers';
 
 const CATEGORIES: { key: PeakCategory; icon: string }[] = [
@@ -14,15 +14,33 @@ const CATEGORIES: { key: PeakCategory; icon: string }[] = [
 ];
 
 export default function BriefEditor() {
-  const { getCardsByCategory, addCard, clearAll, reorderCards } = useBriefStore();
+  const { cardsByGroup, activeGroupId, addCard, clearAll, reorderCards } = useBriefStore();
   const navigate = useNavigate();
   const [dragOverCategory, setDragOverCategory] = useState<PeakCategory | null>(null);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
 
-  const totalCards = CATEGORIES.reduce(
-    (sum, cat) => sum + getCardsByCategory(cat.key).length,
-    0
-  );
+  const cards = useMemo(() => {
+    if (!activeGroupId) return [];
+    return cardsByGroup[activeGroupId] || [];
+  }, [cardsByGroup, activeGroupId]);
+
+  const cardsByCategory = useMemo(() => {
+    const result: Record<PeakCategory, BriefCardType[]> = {
+      brand: [],
+      competitor: [],
+      risk: [],
+      opportunity: [],
+    };
+    cards.forEach((card) => {
+      result[card.category].push(card);
+    });
+    Object.keys(result).forEach((key) => {
+      result[key as PeakCategory].sort((a, b) => a.sortOrder - b.sortOrder);
+    });
+    return result;
+  }, [cards]);
+
+  const totalCards = cards.length;
 
   const handleDragOver = (e: React.DragEvent, category: PeakCategory) => {
     e.preventDefault();
@@ -121,7 +139,7 @@ export default function BriefEditor() {
 
       <div className="flex-1 grid grid-cols-2 gap-3 overflow-hidden">
         {CATEGORIES.map((cat) => {
-          const cards = getCardsByCategory(cat.key);
+          const categoryCards = cardsByCategory[cat.key];
           const isDragOver = dragOverCategory === cat.key;
 
           return (
@@ -139,14 +157,14 @@ export default function BriefEditor() {
                     <span className="text-sm">{cat.icon}</span>
                     <span className="text-sm font-medium">{getCategoryLabel(cat.key)}</span>
                   </div>
-                  <span className="text-xs opacity-80">{cards.length}</span>
+                  <span className="text-xs opacity-80">{categoryCards.length}</span>
                 </div>
               </div>
 
               <div className="flex-1 p-2 overflow-y-auto scrollbar-thin">
-                {cards.length > 0 ? (
+                {categoryCards.length > 0 ? (
                   <div className="space-y-2">
-                    {cards.map((card, idx) => (
+                    {categoryCards.map((card, idx) => (
                       <BriefCard
                         key={card.id}
                         card={card}

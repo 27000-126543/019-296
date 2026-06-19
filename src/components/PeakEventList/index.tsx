@@ -1,18 +1,21 @@
 import { useState } from 'react';
-import { AlertTriangle, Filter } from 'lucide-react';
+import { AlertTriangle, Filter, Sparkles, TrendingDown, TrendingUp, Zap } from 'lucide-react';
 import { useDataStore } from '@/store/dataStore';
 import { useBrandStore } from '@/store/brandStore';
 import PeakEventCard from '@/components/PeakEventCard';
-import type { PeakLevel, PeakCategory } from '@/types';
+import type { PeakLevel, PeakCategory, PeakEvent } from '@/types';
 
 export default function PeakEventList() {
-  const { peakEvents } = useDataStore();
-  const { getAllBrands, getSelfBrand } = useBrandStore();
+  const { getPeaksByGroup, getRecommendedPeaks } = useDataStore();
+  const { selectedGroupId, getAllBrands, getSelfBrand } = useBrandStore();
   const [levelFilter, setLevelFilter] = useState<PeakLevel | 'all'>('all');
   const [categoryFilter, setCategoryFilter] = useState<PeakCategory | 'all'>('all');
+  const [showRecommended, setShowRecommended] = useState(true);
 
   const brands = getAllBrands();
   const selfBrand = getSelfBrand();
+  const peakEvents = selectedGroupId ? getPeaksByGroup(selectedGroupId) : [];
+  const recommendedPeaks = selectedGroupId ? getRecommendedPeaks(selectedGroupId) : [];
 
   const filteredEvents = peakEvents
     .filter((event) => {
@@ -39,6 +42,19 @@ export default function PeakEventList() {
     { value: 'opportunity', label: '机会' },
   ];
 
+  const getRecommendIcon = (event: PeakEvent) => {
+    if (event.category === 'risk' || event.level === 'high') {
+      return <AlertTriangle className="w-3.5 h-3.5 text-red-500" />;
+    }
+    if (event.category === 'competitor') {
+      return <Zap className="w-3.5 h-3.5 text-orange-500" />;
+    }
+    if (event.dayOverDayChange && event.dayOverDayChange > 50) {
+      return <TrendingUp className="w-3.5 h-3.5 text-amber-500" />;
+    }
+    return <TrendingDown className="w-3.5 h-3.5 text-emerald-500" />;
+  };
+
   return (
     <div className="card-base p-5 h-full flex flex-col">
       <div className="flex items-center justify-between mb-4">
@@ -50,6 +66,47 @@ export default function PeakEventList() {
           </span>
         </div>
       </div>
+
+      {showRecommended && recommendedPeaks.length > 0 && (
+        <div className="mb-4 p-3 bg-gradient-to-r from-amber-50 to-orange-50 rounded-lg border border-amber-200/50">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-1.5">
+              <Sparkles className="w-4 h-4 text-amber-500" />
+              <span className="text-xs font-semibold text-amber-700">晨会重点推荐</span>
+            </div>
+            <button
+              onClick={() => setShowRecommended(false)}
+              className="text-[10px] text-amber-500 hover:text-amber-700"
+            >
+              收起
+            </button>
+          </div>
+          <div className="space-y-2">
+            {recommendedPeaks.slice(0, 3).map((event) => (
+              <div
+                key={`rec-${event.id}`}
+                className="flex items-start gap-2 p-2 bg-white/70 rounded text-xs"
+              >
+                <div className="mt-0.5">{getRecommendIcon(event)}</div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium text-gray-800 truncate">{event.title}</p>
+                  <p className="text-[10px] text-gray-500 mt-0.5">{event.recommendReason}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {!showRecommended && recommendedPeaks.length > 0 && (
+        <button
+          onClick={() => setShowRecommended(true)}
+          className="mb-3 flex items-center gap-1 text-xs text-amber-600 hover:text-amber-700"
+        >
+          <Sparkles className="w-3.5 h-3.5" />
+          <span>展开晨会重点推荐 ({recommendedPeaks.length}条)</span>
+        </button>
+      )}
 
       <div className="flex items-center gap-2 mb-4 flex-wrap">
         <div className="flex items-center gap-1 text-xs text-gray-500">

@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { GripVertical, Clock, MessageSquare, Plus } from 'lucide-react';
+import { useState, useMemo } from 'react';
+import { GripVertical, Clock, MessageSquare, Plus, TrendingUp, TrendingDown } from 'lucide-react';
 import type { PeakEvent } from '@/types';
 import { useBrandStore } from '@/store/brandStore';
 import { useBriefStore } from '@/store/briefStore';
@@ -12,12 +12,17 @@ interface PeakEventCardProps {
 
 export default function PeakEventCard({ event, index = 0 }: PeakEventCardProps) {
   const { getAllBrands } = useBrandStore();
-  const { addCard, hasPeak } = useBriefStore();
+  const { cardsByGroup, activeGroupId, addCard } = useBriefStore();
   const [isDragging, setIsDragging] = useState(false);
 
   const brands = getAllBrands();
   const brand = brands.find((b) => b.id === event.brandId);
-  const isAdded = hasPeak(event.id);
+
+  const isAdded = useMemo(() => {
+    if (!activeGroupId) return false;
+    const cards = cardsByGroup[activeGroupId] || [];
+    return cards.some((c) => c.peakEventId === event.id);
+  }, [cardsByGroup, activeGroupId, event.id]);
 
   const handleDragStart = (e: React.DragEvent) => {
     if (isAdded) {
@@ -56,7 +61,7 @@ export default function PeakEventCard({ event, index = 0 }: PeakEventCardProps) 
 
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-2">
+          <div className="flex items-center gap-2 mb-2 flex-wrap">
             {brand && (
               <div
                 className="w-2 h-2 rounded-full"
@@ -69,17 +74,22 @@ export default function PeakEventCard({ event, index = 0 }: PeakEventCardProps) 
             <span className={`text-[10px] px-1.5 py-0.5 rounded border ${getLevelBgColor(event.level)}`}>
               {getLevelLabel(event.level)}
             </span>
+            {event.isRecommended && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 border border-amber-200">
+                ★ 推荐
+              </span>
+            )}
           </div>
 
           <h4 className="text-sm font-medium text-navy-800 mb-2 line-clamp-2 leading-snug">
             {event.title}
           </h4>
 
-          <p className="text-xs text-gray-500 line-clamp-2 leading-relaxed">
+          <p className="text-xs text-gray-500 line-clamp-2 leading-relaxed mb-2">
             {event.summary}
           </p>
 
-          <div className="flex items-center gap-4 mt-3">
+          <div className="flex items-center gap-3 flex-wrap">
             <div className="flex items-center gap-1 text-xs text-gray-400">
               <Clock className="w-3 h-3" />
               <span>{event.time.split(' ')[1]}</span>
@@ -88,7 +98,23 @@ export default function PeakEventCard({ event, index = 0 }: PeakEventCardProps) 
               <MessageSquare className="w-3 h-3" />
               <span>{formatNumber(event.mentionCount)}</span>
             </div>
-            <span className="text-[10px] text-gray-400">
+            {event.negativeRatio !== undefined && (
+              <div className="flex items-center gap-0.5 text-xs text-red-500">
+                <span>负面 {event.negativeRatio}%</span>
+              </div>
+            )}
+            {event.dayOverDayChange !== undefined && (
+              <div className={`flex items-center gap-0.5 text-xs ${
+                event.dayOverDayChange > 0 ? 'text-red-500' : 'text-emerald-500'
+              }`}>
+                {event.dayOverDayChange > 0
+                  ? <TrendingUp className="w-3 h-3" />
+                  : <TrendingDown className="w-3 h-3" />
+                }
+                <span>{event.dayOverDayChange > 0 ? '+' : ''}{event.dayOverDayChange}%</span>
+              </div>
+            )}
+            <span className="text-[10px] text-gray-400 ml-auto">
               {getCategoryLabel(event.category)}
             </span>
           </div>

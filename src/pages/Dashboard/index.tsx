@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { useBrandStore } from '@/store/brandStore';
 import { useDataStore } from '@/store/dataStore';
+import { useBriefStore } from '@/store/briefStore';
 import VolumeRanking from '@/components/VolumeRanking';
 import SentimentChart from '@/components/SentimentChart';
 import PlatformChart from '@/components/PlatformChart';
@@ -21,15 +22,19 @@ import { formatDateCN, formatNumber, getYesterdayDate } from '@/utils/helpers';
 export default function Dashboard() {
   const navigate = useNavigate();
   const { selectedGroupId, getCurrentGroup, getSelfBrand } = useBrandStore();
-  const { getSentimentByBrand, peakEvents } = useDataStore();
+  const { getSentimentByBrand, getPeaksByGroup } = useDataStore();
+  const { setActiveGroup, getCards } = useBriefStore();
+
   const currentGroup = getCurrentGroup();
   const selfBrand = getSelfBrand();
 
   useEffect(() => {
     if (!selectedGroupId) {
       navigate('/');
+      return;
     }
-  }, [selectedGroupId, navigate]);
+    setActiveGroup(selectedGroupId);
+  }, [selectedGroupId, navigate, setActiveGroup]);
 
   if (!selectedGroupId || !currentGroup) {
     return null;
@@ -37,7 +42,9 @@ export default function Dashboard() {
 
   const yesterday = getYesterdayDate();
   const selfSentiment = selfBrand ? getSentimentByBrand(selfBrand.id) : null;
-  const selfPeaks = peakEvents.filter((p) => p.brandId === selfBrand?.id);
+  const groupPeaks = getPeaksByGroup(selectedGroupId);
+  const selfPeaks = groupPeaks.filter((p) => p.brandId === selfBrand?.id);
+  const briefCards = getCards();
 
   const handleExport = () => {
     navigate('/export');
@@ -77,6 +84,8 @@ export default function Dashboard() {
               <div className="flex items-center gap-2 text-[11px] text-white/50">
                 <Calendar className="w-3 h-3" />
                 <span>{formatDateCN(yesterday)}</span>
+                <span className="text-white/30">|</span>
+                <span>简报 {briefCards.length} 条</span>
               </div>
             </div>
           </div>
